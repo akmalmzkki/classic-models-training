@@ -370,6 +370,164 @@ select concat(e.firstName, ' ', e.lastName) as nama_karyawan, concat(m.firstName
     join employees as m on e.reportsTo = m.employeeNumber
     where e.officeCode = m.officeCode;
 
+/*
+ Tampilkan statistik dari tabel pada database classicmodels
+ */
+select 'products' as tabel, count(*) as jumlah_data from products
+    union
+select 'productlines' as tabel, count(*) as jumlah_data from productlines
+    union
+select 'orderdetails' as tabel, count(*) as jumlah_data from orderdetails
+    union
+select 'orders' as tabel, count(*) as jumlah_data from orders
+    union
+select 'customers' as tabel, count(*) as jumlah_data from customers
+    union
+select 'employees' as tabel, count(*) as jumlah_data from employees
+    union
+select 'offices' as tabel, count(*) as jumlah_data from offices
+    union
+select 'payments' as tabel, count(*) as jumlah_data from payments;
+
+/*
+ Siapa pelanggan dengan penjualan tertinggi
+ */
+select customerName, contactLastName, contactFirstName, city, state, sum(quantityOrdered*priceEach) as total_spent, max(orderDate) as last_order
+    from customers
+    join orders using (customerNumber)
+    join orderdetails using (orderNumber)
+    group by customerNumber
+    order by total_spent desc;
+
+/*
+ Karyawan mana yang memiliki total volume penjualan tertinggi
+ */
+select salesRepEmployeeNumber, concat(firstName, ' ', lastName) as name, email, sum(quantityOrdered*priceEach) as total_sales
+from employees
+    join customers on salesRepEmployeeNumber = employeeNumber
+    join orders using (customerNumber)
+    join orderdetails using (orderNumber)
+    group by salesRepEmployeeNumber
+    order by total_sales desc;
+
+/*
+ Kantor mana yang memiliki volume penjualan tertinggi
+ */
+select officeCode, concat(
+        coalesce(concat(o.addressLine2, ' - '), ''),
+        coalesce(concat(o.addressLine1, ', '), ''),
+        coalesce(concat(o.city, ''), ''),
+        coalesce(concat(', ', o.state), ''),
+        coalesce(concat(', ', o.country), '')
+    ) as address, o.phone, sum(quantityOrdered*priceEach) as totalSales
+from orderdetails
+    join orders using (orderNumber)
+    join customers using (customerNumber)
+    join employees on customers.salesRepEmployeeNumber = employees.employeeNumber
+    join offices as o using (officeCode)
+    group by officeCode order by sum(quantityOrdered*priceEach) desc;
+
+/*
+ Bagaimana customer dapat memutuskan cara melakukan promosi untuk mendorong pembelian
+ dalam jumlah yang lebih besar?
+ */
+with few_many as (
+    select case when quantityOrdered < 35 then 'few'
+                when quantityOrdered > 70 then 'many'
+                else 'medium'
+            end as quantity, avg(priceEach) as avg_price
+    from orderdetails group by quantity
+) select quantity, avg_price from few_many;
+
+/*
+ Bulan apa yang paling banyak memesan barang?
+ */
+select monthname(orderDate) as month, sum(quantityOrdered) as total_order from orders
+    join orderdetails using (orderNumber)
+    group by month
+    order by total_order desc;
+
+/*
+ Berapa banyak pesanan yang ada per tahun?
+ */
+select year(orderDate) as year, count(orderNumber) as total_order from orders
+    group by year
+    order by year;
+
+/*
+ Bulan apa yang paling banyak menghasilkan uang?
+ */
+select monthname(orderDate) as month, sum(quantityOrdered*priceEach) as total_sales from orders
+    join orderdetails using (orderNumber)
+    group by month
+    order by total_sales desc;
+
+/*
+ Berapa banyak uang yang dihasilkan per tahun?
+ */
+select year(paymentDate) as year, format(sum(amount), 2) as total_payment from payments
+    group by year
+    order by year;
+
+/*
+ Produk mana yang memiliki volume penjualan tertinggi?
+ */
+select productLine, sum(quantityOrdered*priceEach) as total_sales from productlines
+    join products using (productLine)
+    join orderdetails using (productCode)
+    group by productLine
+    order by total_sales desc;
+
+/*
+ Lini produk mana yang memiliki stok paling banyak
+ */
+select productLine, sum(quantityInStock) as total_stock from productlines
+    join products using (productLine)
+    group by productLine
+    order by total_stock desc;
+
+/*
+ Apa tiga produk terlaris di setiap lini produk
+ */
+select tab_product.productLine, tab_product.productCode, tab_product.productName, tab_product.total_qty_sold,
+       rank() over (partition by productLine order by total_qty_sold desc) as total_qty_sold_rank
+from (select productLine, productCode, productName, sum(quantityOrdered) as total_qty_sold
+    from orderdetails
+        join products using (productCode)
+        group by productCode order by total_qty_sold desc) as tab_product
+    order by total_qty_sold_rank, productLine;
+
+/*
+ Produk apa yang memiliki kontribusi pendapatan total tertinggi
+ bagi perusahaan?
+ */
+select productCode, productName, sum(quantityOrdered*priceEach) as total_revenue_products, sum(quantityOrdered) as total_qty_sold
+from orderdetails
+    join products using (productCode)
+    group by productCode
+    order by total_revenue_products desc;
+
+/*
+ Rasio penjualan produk dari yang tertinggi
+ */
+select productCode, productName, sum(quantityOrdered)/sum(quantityInStock) as ratio
+from orderdetails
+    join products using (productCode)
+    group by productCode
+    order by ratio desc;
+
+/*
+ Gunakan distribusi kumulatif untuk menghitung persentase model yang menghasilkan 80%
+ dari total volume penjualan
+ */
+select tab_product.productCode, tab_product.productName, tab_product.total_sales,
+       percent_rank() over (order by total_sales desc) as total_sales_percent_rank,
+         cume_dist() over (order by total_sales desc) as total_sales_cume_dist from
+    (select productCode, productName, sum(quantityOrdered*priceEach) as total_sales
+    from products join orderdetails using (productCode)
+        group by productCode
+        order by total_sales desc) as tab_product;
+
 select * from products;
 select * from productlines;
 select * from orderdetails;
